@@ -1,0 +1,10 @@
+{
+    "id": "wivoo-daily-rollover",
+    "name": "Wivoo Daily Rollover",
+    "version": "1.0.0",
+    "minAppVersion": "1.0.0",
+    "description": "Roll over unchecked todos from the most recent daily note and summarize free-form content via Claude CLI.",
+    "author": "Emery Dittmer",
+    "authorUrl": "",
+    "isDesktopOnly": true
+}

@@ -1,0 +1,29 @@
+{
+    "name": "wivoo-daily-rollover",
+    "version": "1.0.0",
+    "description": "Obsidian plugin: daily note rollover with Claude AI summary",
+    "main": "main.js",
+    "scripts": {
+        "dev": "node esbuild.config.mjs",
+        "build": "node esbuild.config.mjs production",
+        "test": "jest"
+    },
+    "devDependencies": {
+        "@types/jest": "^29.5.0",
+        "@types/node": "^18.0.0",
+        "builtin-modules": "^3.3.0",
+        "esbuild": "0.21.5",
+        "jest": "^29.5.0",
+        "obsidian": "latest",
+        "ts-jest": "^29.1.0",
+        "typescript": "^5.0.0"
+    },
+    "jest": {
+        "preset": "ts-jest",
+        "testEnvironment": "node",
+        "roots": ["<rootDir>/tests"],
+        "moduleNameMapper": {
+            "^obsidian$": "<rootDir>/tests/__mocks__/obsidian.ts"
+        }
+    }
+}
