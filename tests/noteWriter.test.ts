@@ -1,4 +1,4 @@
-import { assembleRolloverBlock, prependToNote, hasRolloverBlock } from '../src/noteWriter';
+import { assembleRolloverBlock, prependToNote, hasRolloverBlock, removeRolloverBlock } from '../src/noteWriter';
 
 describe('assembleRolloverBlock', () => {
     test('includes summary section with bullets', () => {
@@ -56,5 +56,26 @@ describe('hasRolloverBlock', () => {
 
     test('returns false when marker is absent', () => {
         expect(hasRolloverBlock('- [ ] Some todo\nSome notes')).toBe(false);
+    });
+});
+
+describe('removeRolloverBlock', () => {
+    test('removes rollover block with divider', () => {
+        const content = "## Yesterday's Summary\n- bullet\n\n## Rolled Over\n- [ ] Todo\n\n---\nMy notes";
+        const result = removeRolloverBlock(content);
+        expect(result).toBe('My notes');
+        expect(result).not.toContain("## Yesterday's Summary");
+    });
+
+    test('returns content unchanged when no rollover block present', () => {
+        const content = '- [ ] Some todo\nSome notes';
+        expect(removeRolloverBlock(content)).toBe(content);
+    });
+
+    test('removes rollover block without divider, preserves subsequent heading', () => {
+        const content = "## Yesterday's Summary\n- bullet\n\n## My Meeting Notes\nDetails";
+        const result = removeRolloverBlock(content);
+        expect(result).not.toContain("## Yesterday's Summary");
+        expect(result).toContain('## My Meeting Notes');
     });
 });

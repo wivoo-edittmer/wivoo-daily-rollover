@@ -2,7 +2,7 @@ import { App, Modal, Notice, TFile } from 'obsidian';
 import { WivooRolloverSettings } from './settings';
 import { parseDailyNote } from './noteParser';
 import { summarize } from './claudeSummarize';
-import { assembleRolloverBlock, prependToNote, hasRolloverBlock } from './noteWriter';
+import { assembleRolloverBlock, prependToNote, hasRolloverBlock, removeRolloverBlock } from './noteWriter';
 
 const DAILY_NOTE_FOLDER = '0 - Daily Note';
 
@@ -28,7 +28,7 @@ export function getTodayPath(): string {
 
 class ConfirmModal extends Modal {
     private message: string;
-    private resolve!: (value: boolean) => void;
+    private resolve?: (value: boolean) => void;
 
     constructor(app: App, message: string) {
         super(app);
@@ -41,14 +41,15 @@ class ConfirmModal extends Modal {
         const row = contentEl.createDiv({ cls: 'modal-button-container' });
 
         const yes = row.createEl('button', { text: 'Yes, overwrite' });
-        yes.onclick = () => { this.resolve(true); this.close(); };
+        yes.onclick = () => { this.resolve?.(true); this.close(); };
 
         const no = row.createEl('button', { text: 'Cancel' });
-        no.onclick = () => { this.resolve(false); this.close(); };
+        no.onclick = () => { this.resolve?.(false); this.close(); };
     }
 
     onClose(): void {
         this.contentEl.empty();
+        this.resolve?.(false);  // Escape / X = implicit cancel
     }
 
     prompt(): Promise<boolean> {
@@ -58,6 +59,7 @@ class ConfirmModal extends Modal {
 }
 
 export async function performRollover(app: App, settings: WivooRolloverSettings): Promise<void> {
+    try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -89,12 +91,14 @@ export async function performRollover(app: App, settings: WivooRolloverSettings)
     const todayContent = todayFile ? await app.vault.read(todayFile) : '';
 
     // Duplicate guard
+    let baseContent = todayContent;
     if (hasRolloverBlock(todayContent)) {
         const confirmed = await new ConfirmModal(
             app,
             'Rollover already applied today — run again and overwrite?'
         ).prompt();
         if (!confirmed) return;
+        baseContent = removeRolloverBlock(todayContent);
     }
 
     // Parse source note
@@ -102,15 +106,17 @@ export async function performRollover(app: App, settings: WivooRolloverSettings)
     const { todos, freeForm } = parseDailyNote(sourceContent);
 
     // Summarize free-form content (skip Claude call if there is nothing to summarize)
-    new Notice('Rolling over… calling Claude CLI');
     const nonEmptyFreeForm = freeForm.filter(l => l.trim().length > 0);
+    if (nonEmptyFreeForm.length > 0) {
+        new Notice('Rolling over… calling Claude CLI');
+    }
     const summary = nonEmptyFreeForm.length > 0
         ? await summarize(nonEmptyFreeForm.join('\n'), settings.claudeBinaryPath, settings.summaryPrompt)
         : null;
 
     // Assemble and write
     const block = assembleRolloverBlock(summary, todos, settings.addDivider);
-    const newContent = prependToNote(todayContent, block);
+    const newContent = prependToNote(baseContent, block);
 
     if (todayFile) {
         await app.vault.modify(todayFile, newContent);
@@ -119,4 +125,8 @@ export async function performRollover(app: App, settings: WivooRolloverSettings)
     }
 
     new Notice(`Rolled over from ${sourceFile.basename} ✓`);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        new Notice(`Rollover failed: ${message}`);
+    }
 }

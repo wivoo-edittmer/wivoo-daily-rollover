@@ -118,6 +118,22 @@ ${freeFormContent}`;
 
 // src/noteWriter.ts
 var ROLLOVER_MARKER = "## Yesterday's Summary";
+function removeRolloverBlock(content) {
+  if (!content.includes(ROLLOVER_MARKER)) return content;
+  const markerIdx = content.indexOf(ROLLOVER_MARKER);
+  if (markerIdx === -1) return content;
+  const afterMarker = content.slice(markerIdx);
+  const blockEnd = afterMarker.match(/^([\s\S]*?\n---\n)/);
+  if (blockEnd) {
+    return content.slice(0, markerIdx) + content.slice(markerIdx + blockEnd[1].length);
+  }
+  const nextHeading = afterMarker.slice(ROLLOVER_MARKER.length).search(/\n## /);
+  if (nextHeading !== -1) {
+    const cutEnd = markerIdx + ROLLOVER_MARKER.length + nextHeading + 1;
+    return content.slice(0, markerIdx) + content.slice(cutEnd);
+  }
+  return content.slice(0, markerIdx);
+}
 function assembleRolloverBlock(summary, todos, addDivider) {
   const parts = [];
   parts.push(ROLLOVER_MARKER);
@@ -174,17 +190,21 @@ var ConfirmModal = class extends import_obsidian2.Modal {
     const row = contentEl.createDiv({ cls: "modal-button-container" });
     const yes = row.createEl("button", { text: "Yes, overwrite" });
     yes.onclick = () => {
-      this.resolve(true);
+      var _a;
+      (_a = this.resolve) == null ? void 0 : _a.call(this, true);
       this.close();
     };
     const no = row.createEl("button", { text: "Cancel" });
     no.onclick = () => {
-      this.resolve(false);
+      var _a;
+      (_a = this.resolve) == null ? void 0 : _a.call(this, false);
       this.close();
     };
   }
   onClose() {
+    var _a;
     this.contentEl.empty();
+    (_a = this.resolve) == null ? void 0 : _a.call(this, false);
   }
   prompt() {
     this.open();
@@ -195,49 +215,58 @@ var ConfirmModal = class extends import_obsidian2.Modal {
 };
 async function performRollover(app, settings) {
   var _a;
-  const today = /* @__PURE__ */ new Date();
-  today.setHours(0, 0, 0, 0);
-  let sourceFile = null;
-  let mostRecentDate = null;
-  for (const file of app.vault.getMarkdownFiles()) {
-    if (((_a = file.parent) == null ? void 0 : _a.path) !== DAILY_NOTE_FOLDER) continue;
-    const date = parseDailyNoteDate(file.basename);
-    if (!date) continue;
-    date.setHours(0, 0, 0, 0);
-    if (date >= today) continue;
-    if (!mostRecentDate || date > mostRecentDate) {
-      mostRecentDate = date;
-      sourceFile = file;
+  try {
+    const today = /* @__PURE__ */ new Date();
+    today.setHours(0, 0, 0, 0);
+    let sourceFile = null;
+    let mostRecentDate = null;
+    for (const file of app.vault.getMarkdownFiles()) {
+      if (((_a = file.parent) == null ? void 0 : _a.path) !== DAILY_NOTE_FOLDER) continue;
+      const date = parseDailyNoteDate(file.basename);
+      if (!date) continue;
+      date.setHours(0, 0, 0, 0);
+      if (date >= today) continue;
+      if (!mostRecentDate || date > mostRecentDate) {
+        mostRecentDate = date;
+        sourceFile = file;
+      }
     }
+    if (!sourceFile) {
+      new import_obsidian2.Notice("No previous daily note found to roll over.");
+      return;
+    }
+    const todayPath = getTodayPath();
+    const todayAbstract = app.vault.getAbstractFileByPath(todayPath);
+    const todayFile = todayAbstract instanceof import_obsidian2.TFile ? todayAbstract : null;
+    const todayContent = todayFile ? await app.vault.read(todayFile) : "";
+    let baseContent = todayContent;
+    if (hasRolloverBlock(todayContent)) {
+      const confirmed = await new ConfirmModal(
+        app,
+        "Rollover already applied today \u2014 run again and overwrite?"
+      ).prompt();
+      if (!confirmed) return;
+      baseContent = removeRolloverBlock(todayContent);
+    }
+    const sourceContent = await app.vault.read(sourceFile);
+    const { todos, freeForm } = parseDailyNote(sourceContent);
+    const nonEmptyFreeForm = freeForm.filter((l) => l.trim().length > 0);
+    if (nonEmptyFreeForm.length > 0) {
+      new import_obsidian2.Notice("Rolling over\u2026 calling Claude CLI");
+    }
+    const summary = nonEmptyFreeForm.length > 0 ? await summarize(nonEmptyFreeForm.join("\n"), settings.claudeBinaryPath, settings.summaryPrompt) : null;
+    const block = assembleRolloverBlock(summary, todos, settings.addDivider);
+    const newContent = prependToNote(baseContent, block);
+    if (todayFile) {
+      await app.vault.modify(todayFile, newContent);
+    } else {
+      await app.vault.create(todayPath, newContent);
+    }
+    new import_obsidian2.Notice(`Rolled over from ${sourceFile.basename} \u2713`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    new import_obsidian2.Notice(`Rollover failed: ${message}`);
   }
-  if (!sourceFile) {
-    new import_obsidian2.Notice("No previous daily note found to roll over.");
-    return;
-  }
-  const todayPath = getTodayPath();
-  const todayAbstract = app.vault.getAbstractFileByPath(todayPath);
-  const todayFile = todayAbstract instanceof import_obsidian2.TFile ? todayAbstract : null;
-  const todayContent = todayFile ? await app.vault.read(todayFile) : "";
-  if (hasRolloverBlock(todayContent)) {
-    const confirmed = await new ConfirmModal(
-      app,
-      "Rollover already applied today \u2014 run again and overwrite?"
-    ).prompt();
-    if (!confirmed) return;
-  }
-  const sourceContent = await app.vault.read(sourceFile);
-  const { todos, freeForm } = parseDailyNote(sourceContent);
-  new import_obsidian2.Notice("Rolling over\u2026 calling Claude CLI");
-  const nonEmptyFreeForm = freeForm.filter((l) => l.trim().length > 0);
-  const summary = nonEmptyFreeForm.length > 0 ? await summarize(nonEmptyFreeForm.join("\n"), settings.claudeBinaryPath, settings.summaryPrompt) : null;
-  const block = assembleRolloverBlock(summary, todos, settings.addDivider);
-  const newContent = prependToNote(todayContent, block);
-  if (todayFile) {
-    await app.vault.modify(todayFile, newContent);
-  } else {
-    await app.vault.create(todayPath, newContent);
-  }
-  new import_obsidian2.Notice(`Rolled over from ${sourceFile.basename} \u2713`);
 }
 
 // src/main.ts
