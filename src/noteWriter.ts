@@ -1,5 +1,14 @@
 const ROLLOVER_MARKER = "## Yesterday's Summary";
 
+const UNCHECKED_TODO_RE = /^(\t*)(- \[ \] )(.*)$/;
+
+function colorTodoRed(line: string): string {
+    const match = line.match(UNCHECKED_TODO_RE);
+    if (!match) return line;
+    const [, indent, checkbox, text] = match;
+    return `${indent}${checkbox}<span style="color: red">${text}</span>`;
+}
+
 export function removeRolloverBlock(content: string): string {
     if (!content.includes(ROLLOVER_MARKER)) return content;
     const markerIdx = content.indexOf(ROLLOVER_MARKER);
@@ -33,7 +42,7 @@ export function assembleRolloverBlock(
 
     if (todos.length > 0) {
         parts.push('## Rolled Over');
-        parts.push(...todos);
+        parts.push(...todos.map(colorTodoRed));
         parts.push('');
     }
 

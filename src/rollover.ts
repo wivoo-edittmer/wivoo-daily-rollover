@@ -26,6 +26,56 @@ export function getTodayPath(): string {
     return `${DAILY_NOTE_FOLDER}/${y}-${m}-${d}.md`;
 }
 
+type SummaryStatus = 'generated' | 'skipped' | 'failed';
+
+class RolloverResultModal extends Modal {
+    constructor(
+        app: App,
+        private sourceNote: string,
+        private todoCount: number,
+        private summaryStatus: SummaryStatus
+    ) {
+        super(app);
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.createEl('h2', { text: 'Rollover complete' });
+
+        const grid = contentEl.createDiv({ cls: 'wivoo-result-grid' });
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'auto 1fr';
+        grid.style.gap = '6px 16px';
+        grid.style.margin = '12px 0 20px';
+
+        const row = (label: string, value: string) => {
+            grid.createEl('span', { text: label, cls: 'wivoo-result-label' }).style.fontWeight = 'bold';
+            grid.createEl('span', { text: value });
+        };
+
+        row('Source', this.sourceNote);
+        row(
+            'Action items',
+            this.todoCount > 0
+                ? `${this.todoCount} rolled over (shown in red)`
+                : 'None found'
+        );
+        row('AI summary', {
+            generated: 'Generated ✓',
+            skipped: 'Skipped — no free-form content',
+            failed: 'Unavailable — Claude CLI error',
+        }[this.summaryStatus]);
+
+        const btn = contentEl.createEl('button', { text: 'Close' });
+        btn.style.marginTop = '4px';
+        btn.onclick = () => this.close();
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+    }
+}
+
 class ConfirmModal extends Modal {
     private message: string;
     private resolve?: (value: boolean) => void;
@@ -107,12 +157,14 @@ export async function performRollover(app: App, settings: WivooRolloverSettings)
 
     // Summarize free-form content (skip Claude call if there is nothing to summarize)
     const nonEmptyFreeForm = freeForm.filter(l => l.trim().length > 0);
+    let summaryStatus: SummaryStatus = 'skipped';
+    let summary: string | null = null;
+
     if (nonEmptyFreeForm.length > 0) {
         new Notice('Rolling over… calling Claude CLI');
+        summary = await summarize(nonEmptyFreeForm.join('\n'), settings.claudeBinaryPath, settings.summaryPrompt);
+        summaryStatus = summary ? 'generated' : 'failed';
     }
-    const summary = nonEmptyFreeForm.length > 0
-        ? await summarize(nonEmptyFreeForm.join('\n'), settings.claudeBinaryPath, settings.summaryPrompt)
-        : null;
 
     // Assemble and write
     const block = assembleRolloverBlock(summary, todos, settings.addDivider);
@@ -124,7 +176,7 @@ export async function performRollover(app: App, settings: WivooRolloverSettings)
         await app.vault.create(todayPath, newContent);
     }
 
-    new Notice(`Rolled over from ${sourceFile.basename} ✓`);
+    new RolloverResultModal(app, sourceFile.basename, todos.length, summaryStatus).open();
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         new Notice(`Rollover failed: ${message}`);

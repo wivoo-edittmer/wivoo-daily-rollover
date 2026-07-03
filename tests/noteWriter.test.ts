@@ -12,11 +12,11 @@ describe('assembleRolloverBlock', () => {
         expect(block).toContain('⚠️ Claude CLI unavailable');
     });
 
-    test('includes rolled-over section with todos', () => {
+    test('includes rolled-over section with todos colored red', () => {
         const block = assembleRolloverBlock(null, ['- [ ] Task A', '\t- [ ] Sub'], false);
         expect(block).toContain('## Rolled Over');
-        expect(block).toContain('- [ ] Task A');
-        expect(block).toContain('\t- [ ] Sub');
+        expect(block).toContain('- [ ] <span style="color: red">Task A</span>');
+        expect(block).toContain('\t- [ ] <span style="color: red">Sub</span>');
     });
 
     test('omits rolled-over section when there are no todos', () => {

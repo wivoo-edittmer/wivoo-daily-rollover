@@ -118,6 +118,13 @@ ${freeFormContent}`;
 
 // src/noteWriter.ts
 var ROLLOVER_MARKER = "## Yesterday's Summary";
+var UNCHECKED_TODO_RE = /^(\t*)(- \[ \] )(.*)$/;
+function colorTodoRed(line) {
+  const match = line.match(UNCHECKED_TODO_RE);
+  if (!match) return line;
+  const [, indent, checkbox, text] = match;
+  return `${indent}${checkbox}<span style="color: red">${text}</span>`;
+}
 function removeRolloverBlock(content) {
   if (!content.includes(ROLLOVER_MARKER)) return content;
   const markerIdx = content.indexOf(ROLLOVER_MARKER);
@@ -141,7 +148,7 @@ function assembleRolloverBlock(summary, todos, addDivider) {
   parts.push("");
   if (todos.length > 0) {
     parts.push("## Rolled Over");
-    parts.push(...todos);
+    parts.push(...todos.map(colorTodoRed));
     parts.push("");
   }
   if (addDivider) {
@@ -179,6 +186,43 @@ function getTodayPath() {
   const d = String(now.getDate()).padStart(2, "0");
   return `${DAILY_NOTE_FOLDER}/${y}-${m}-${d}.md`;
 }
+var RolloverResultModal = class extends import_obsidian2.Modal {
+  constructor(app, sourceNote, todoCount, summaryStatus) {
+    super(app);
+    this.sourceNote = sourceNote;
+    this.todoCount = todoCount;
+    this.summaryStatus = summaryStatus;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h2", { text: "Rollover complete" });
+    const grid = contentEl.createDiv({ cls: "wivoo-result-grid" });
+    grid.style.display = "grid";
+    grid.style.gridTemplateColumns = "auto 1fr";
+    grid.style.gap = "6px 16px";
+    grid.style.margin = "12px 0 20px";
+    const row = (label, value) => {
+      grid.createEl("span", { text: label, cls: "wivoo-result-label" }).style.fontWeight = "bold";
+      grid.createEl("span", { text: value });
+    };
+    row("Source", this.sourceNote);
+    row(
+      "Action items",
+      this.todoCount > 0 ? `${this.todoCount} rolled over (shown in red)` : "None found"
+    );
+    row("AI summary", {
+      generated: "Generated \u2713",
+      skipped: "Skipped \u2014 no free-form content",
+      failed: "Unavailable \u2014 Claude CLI error"
+    }[this.summaryStatus]);
+    const btn = contentEl.createEl("button", { text: "Close" });
+    btn.style.marginTop = "4px";
+    btn.onclick = () => this.close();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 var ConfirmModal = class extends import_obsidian2.Modal {
   constructor(app, message) {
     super(app);
@@ -251,10 +295,13 @@ async function performRollover(app, settings) {
     const sourceContent = await app.vault.read(sourceFile);
     const { todos, freeForm } = parseDailyNote(sourceContent);
     const nonEmptyFreeForm = freeForm.filter((l) => l.trim().length > 0);
+    let summaryStatus = "skipped";
+    let summary = null;
     if (nonEmptyFreeForm.length > 0) {
       new import_obsidian2.Notice("Rolling over\u2026 calling Claude CLI");
+      summary = await summarize(nonEmptyFreeForm.join("\n"), settings.claudeBinaryPath, settings.summaryPrompt);
+      summaryStatus = summary ? "generated" : "failed";
     }
-    const summary = nonEmptyFreeForm.length > 0 ? await summarize(nonEmptyFreeForm.join("\n"), settings.claudeBinaryPath, settings.summaryPrompt) : null;
     const block = assembleRolloverBlock(summary, todos, settings.addDivider);
     const newContent = prependToNote(baseContent, block);
     if (todayFile) {
@@ -262,7 +309,7 @@ async function performRollover(app, settings) {
     } else {
       await app.vault.create(todayPath, newContent);
     }
-    new import_obsidian2.Notice(`Rolled over from ${sourceFile.basename} \u2713`);
+    new RolloverResultModal(app, sourceFile.basename, todos.length, summaryStatus).open();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     new import_obsidian2.Notice(`Rollover failed: ${message}`);
