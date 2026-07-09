@@ -28,9 +28,16 @@ var import_obsidian3 = require("obsidian");
 var import_obsidian = require("obsidian");
 var DEFAULT_SETTINGS = {
   claudeBinaryPath: "claude",
-  summaryPrompt: `Summarize these notes in 3-5 concise bullet points.
-Focus on decisions made, key context, and blockers.
-Output only the bullet points, no preamble or explanation.`,
+  summaryPrompt: `You are reviewing notes from the previous day. Produce a short summary with two sections:
+
+**\u26A1 Important action items** \u2014 list any tasks, follow-ups, deadlines, or commitments that need attention today. Prefix each with "- [ ] " so they appear as checkboxes. If none are found, omit this section.
+
+**\u{1F4DD} Key context** \u2014 2-4 bullet points covering decisions made, blockers, and relevant background worth carrying forward.
+
+Rules:
+- Output only the two sections above, no preamble or explanation.
+- Be specific: name people, projects, or deadlines mentioned in the notes.
+- If the notes contain no meaningful content, output a single bullet: "- No significant updates."`,
   addDivider: true
 };
 var WivooRolloverSettingTab = class extends import_obsidian.PluginSettingTab {

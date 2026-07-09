@@ -9,9 +9,16 @@ export interface WivooRolloverSettings {
 
 export const DEFAULT_SETTINGS: WivooRolloverSettings = {
     claudeBinaryPath: 'claude',
-    summaryPrompt: `Summarize these notes in 3-5 concise bullet points.
-Focus on decisions made, key context, and blockers.
-Output only the bullet points, no preamble or explanation.`,
+    summaryPrompt: `You are reviewing notes from the previous day. Produce a short summary with two sections:
+
+**⚡ Important action items** — list any tasks, follow-ups, deadlines, or commitments that need attention today. Prefix each with "- [ ] " so they appear as checkboxes. If none are found, omit this section.
+
+**📝 Key context** — 2-4 bullet points covering decisions made, blockers, and relevant background worth carrying forward.
+
+Rules:
+- Output only the two sections above, no preamble or explanation.
+- Be specific: name people, projects, or deadlines mentioned in the notes.
+- If the notes contain no meaningful content, output a single bullet: "- No significant updates."`,
     addDivider: true,
 };
 
