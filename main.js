@@ -64,6 +64,26 @@ var WivooRolloverSettingTab = class extends import_obsidian.PluginSettingTab {
 var import_obsidian2 = require("obsidian");
 
 // src/noteParser.ts
+var ROLLED_OVER_HEADING = "## Rolled Over";
+function extractFromRolloverBlock(content) {
+  const idx = content.indexOf(ROLLED_OVER_HEADING);
+  if (idx === -1) return null;
+  const afterHeading = content.slice(idx + ROLLED_OVER_HEADING.length);
+  const dividerInSection = afterHeading.search(/\n---(?:\n|$)/);
+  const nextHeadingInSection = afterHeading.search(/\n## /);
+  let sectionEnd;
+  if (dividerInSection !== -1 && (nextHeadingInSection === -1 || dividerInSection < nextHeadingInSection)) {
+    sectionEnd = dividerInSection;
+  } else if (nextHeadingInSection !== -1) {
+    sectionEnd = nextHeadingInSection;
+  } else {
+    sectionEnd = afterHeading.length;
+  }
+  const rolledLines = afterHeading.slice(0, sectionEnd).split("\n").filter((l) => l.trim().length > 0);
+  const dividerMatch = content.match(/\n---\n([\s\S]*)/);
+  const freeFormLines = dividerMatch ? dividerMatch[1].split("\n") : [];
+  return { rolledLines, freeFormLines };
+}
 var CHECKED_MARKERS = /* @__PURE__ */ new Set(["x", "X", "-"]);
 var TODO_RE = /^(\t*)- \[(.)\] /;
 function parseDailyNote(content) {
@@ -119,6 +139,10 @@ ${freeFormContent}`;
 // src/noteWriter.ts
 var ROLLOVER_MARKER = "## Yesterday's Summary";
 var UNCHECKED_TODO_RE = /^(\t*)(- \[ \] )(.*)$/;
+var RED_SPAN_RE = /<span style="color: red">([\s\S]*?)<\/span>/g;
+function stripRedSpans(line) {
+  return line.replace(RED_SPAN_RE, "$1");
+}
 function colorTodoRed(line) {
   const match = line.match(UNCHECKED_TODO_RE);
   if (!match) return line;
@@ -141,14 +165,14 @@ function removeRolloverBlock(content) {
   }
   return content.slice(0, markerIdx);
 }
-function assembleRolloverBlock(summary, todos, addDivider) {
+function assembleRolloverBlock(summary, lines, addDivider) {
   const parts = [];
   parts.push(ROLLOVER_MARKER);
   parts.push(summary != null ? summary : "> \u26A0\uFE0F Claude CLI unavailable \u2014 summary skipped");
   parts.push("");
-  if (todos.length > 0) {
+  if (lines.length > 0) {
     parts.push("## Rolled Over");
-    parts.push(...todos.map(colorTodoRed));
+    parts.push(...lines.map((l) => colorTodoRed(stripRedSpans(l))));
     parts.push("");
   }
   if (addDivider) {
@@ -207,8 +231,8 @@ var RolloverResultModal = class extends import_obsidian2.Modal {
     };
     row("Source", this.sourceNote);
     row(
-      "Action items",
-      this.todoCount > 0 ? `${this.todoCount} rolled over (shown in red)` : "None found"
+      "Rolled over",
+      this.todoCount > 0 ? `${this.todoCount} item${this.todoCount === 1 ? "" : "s"} (todos shown in red)` : "Nothing to roll over"
     );
     row("AI summary", {
       generated: "Generated \u2713",
@@ -293,8 +317,18 @@ async function performRollover(app, settings) {
       baseContent = removeRolloverBlock(todayContent);
     }
     const sourceContent = await app.vault.read(sourceFile);
-    const { todos, freeForm } = parseDailyNote(sourceContent);
-    const nonEmptyFreeForm = freeForm.filter((l) => l.trim().length > 0);
+    let rolledLines;
+    let freeFormLines;
+    const extracted = extractFromRolloverBlock(sourceContent);
+    if (extracted) {
+      rolledLines = extracted.rolledLines;
+      freeFormLines = extracted.freeFormLines;
+    } else {
+      const parsed = parseDailyNote(sourceContent);
+      rolledLines = parsed.todos;
+      freeFormLines = parsed.freeForm;
+    }
+    const nonEmptyFreeForm = freeFormLines.filter((l) => l.trim().length > 0);
     let summaryStatus = "skipped";
     let summary = null;
     if (nonEmptyFreeForm.length > 0) {
@@ -302,14 +336,14 @@ async function performRollover(app, settings) {
       summary = await summarize(nonEmptyFreeForm.join("\n"), settings.claudeBinaryPath, settings.summaryPrompt);
       summaryStatus = summary ? "generated" : "failed";
     }
-    const block = assembleRolloverBlock(summary, todos, settings.addDivider);
+    const block = assembleRolloverBlock(summary, rolledLines, settings.addDivider);
     const newContent = prependToNote(baseContent, block);
     if (todayFile) {
       await app.vault.modify(todayFile, newContent);
     } else {
       await app.vault.create(todayPath, newContent);
     }
-    new RolloverResultModal(app, sourceFile.basename, todos.length, summaryStatus).open();
+    new RolloverResultModal(app, sourceFile.basename, rolledLines.length, summaryStatus).open();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     new import_obsidian2.Notice(`Rollover failed: ${message}`);

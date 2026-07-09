@@ -1,6 +1,11 @@
 const ROLLOVER_MARKER = "## Yesterday's Summary";
 
 const UNCHECKED_TODO_RE = /^(\t*)(- \[ \] )(.*)$/;
+const RED_SPAN_RE = /<span style="color: red">([\s\S]*?)<\/span>/g;
+
+function stripRedSpans(line: string): string {
+    return line.replace(RED_SPAN_RE, '$1');
+}
 
 function colorTodoRed(line: string): string {
     const match = line.match(UNCHECKED_TODO_RE);
@@ -31,7 +36,7 @@ export function removeRolloverBlock(content: string): string {
 
 export function assembleRolloverBlock(
     summary: string | null,
-    todos: string[],
+    lines: string[],
     addDivider: boolean
 ): string {
     const parts: string[] = [];
@@ -40,9 +45,9 @@ export function assembleRolloverBlock(
     parts.push(summary ?? '> ⚠️ Claude CLI unavailable — summary skipped');
     parts.push('');
 
-    if (todos.length > 0) {
+    if (lines.length > 0) {
         parts.push('## Rolled Over');
-        parts.push(...todos.map(colorTodoRed));
+        parts.push(...lines.map(l => colorTodoRed(stripRedSpans(l))));
         parts.push('');
     }
 

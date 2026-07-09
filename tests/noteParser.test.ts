@@ -1,4 +1,4 @@
-import { parseDailyNote } from '../src/noteParser';
+import { parseDailyNote, extractFromRolloverBlock } from '../src/noteParser';
 
 describe('parseDailyNote', () => {
     test('captures unchecked todos at root level', () => {
@@ -37,5 +37,52 @@ describe('parseDailyNote', () => {
         const { todos, freeForm } = parseDailyNote('');
         expect(todos).toEqual([]);
         expect(freeForm).toEqual([]);
+    });
+});
+
+describe('extractFromRolloverBlock', () => {
+    test('returns null when no Rolled Over section exists', () => {
+        expect(extractFromRolloverBlock('- [ ] Task\nSome notes')).toBeNull();
+    });
+
+    test('extracts all lines between heading and divider', () => {
+        const note = "## Yesterday's Summary\n- bullet\n\n## Rolled Over\n- [ ] Task A\nSome note\n\n---\nMy notes";
+        const result = extractFromRolloverBlock(note);
+        expect(result).not.toBeNull();
+        expect(result!.rolledLines).toEqual(['- [ ] Task A', 'Some note']);
+    });
+
+    test('includes non-todo content in rolledLines', () => {
+        const note = "## Rolled Over\n- [ ] Task\nContext note\n- Another bullet\n\n---\nBody";
+        const result = extractFromRolloverBlock(note);
+        expect(result!.rolledLines).toContain('Context note');
+        expect(result!.rolledLines).toContain('- Another bullet');
+    });
+
+    test('strips existing red spans from rolledLines before they reach assembleRolloverBlock', () => {
+        const note = '## Rolled Over\n- [ ] <span style="color: red">Old task</span>\n\n---\nBody';
+        const result = extractFromRolloverBlock(note);
+        // Raw lines are returned with spans intact; stripRedSpans is applied in noteWriter
+        expect(result!.rolledLines[0]).toContain('Old task');
+    });
+
+    test('free-form lines come from after the --- divider', () => {
+        const note = "## Rolled Over\n- [ ] Task\n\n---\nMeeting notes\nMore notes";
+        const result = extractFromRolloverBlock(note);
+        const combined = result!.freeFormLines.join('\n');
+        expect(combined).toContain('Meeting notes');
+        expect(combined).toContain('More notes');
+    });
+
+    test('returns empty freeFormLines when no divider present', () => {
+        const note = "## Rolled Over\n- [ ] Task";
+        const result = extractFromRolloverBlock(note);
+        expect(result!.freeFormLines).toEqual([]);
+    });
+
+    test('stops section at next ## heading when no divider', () => {
+        const note = "## Rolled Over\n- [ ] Task\n\n## My Notes\nBody";
+        const result = extractFromRolloverBlock(note);
+        expect(result!.rolledLines).toEqual(['- [ ] Task']);
     });
 });

@@ -1,6 +1,6 @@
 import { App, Modal, Notice, TFile } from 'obsidian';
 import { WivooRolloverSettings } from './settings';
-import { parseDailyNote } from './noteParser';
+import { parseDailyNote, extractFromRolloverBlock } from './noteParser';
 import { summarize } from './claudeSummarize';
 import { assembleRolloverBlock, prependToNote, hasRolloverBlock, removeRolloverBlock } from './noteWriter';
 
@@ -55,10 +55,10 @@ class RolloverResultModal extends Modal {
 
         row('Source', this.sourceNote);
         row(
-            'Action items',
+            'Rolled over',
             this.todoCount > 0
-                ? `${this.todoCount} rolled over (shown in red)`
-                : 'None found'
+                ? `${this.todoCount} item${this.todoCount === 1 ? '' : 's'} (todos shown in red)`
+                : 'Nothing to roll over'
         );
         row('AI summary', {
             generated: 'Generated ✓',
@@ -151,12 +151,23 @@ export async function performRollover(app: App, settings: WivooRolloverSettings)
         baseContent = removeRolloverBlock(todayContent);
     }
 
-    // Parse source note
+    // Parse source note — prefer structured rollover block, fall back to full todo scan
     const sourceContent = await app.vault.read(sourceFile);
-    const { todos, freeForm } = parseDailyNote(sourceContent);
+    let rolledLines: string[];
+    let freeFormLines: string[];
+
+    const extracted = extractFromRolloverBlock(sourceContent);
+    if (extracted) {
+        rolledLines = extracted.rolledLines;
+        freeFormLines = extracted.freeFormLines;
+    } else {
+        const parsed = parseDailyNote(sourceContent);
+        rolledLines = parsed.todos;
+        freeFormLines = parsed.freeForm;
+    }
 
     // Summarize free-form content (skip Claude call if there is nothing to summarize)
-    const nonEmptyFreeForm = freeForm.filter(l => l.trim().length > 0);
+    const nonEmptyFreeForm = freeFormLines.filter(l => l.trim().length > 0);
     let summaryStatus: SummaryStatus = 'skipped';
     let summary: string | null = null;
 
@@ -167,7 +178,7 @@ export async function performRollover(app: App, settings: WivooRolloverSettings)
     }
 
     // Assemble and write
-    const block = assembleRolloverBlock(summary, todos, settings.addDivider);
+    const block = assembleRolloverBlock(summary, rolledLines, settings.addDivider);
     const newContent = prependToNote(baseContent, block);
 
     if (todayFile) {
@@ -176,7 +187,7 @@ export async function performRollover(app: App, settings: WivooRolloverSettings)
         await app.vault.create(todayPath, newContent);
     }
 
-    new RolloverResultModal(app, sourceFile.basename, todos.length, summaryStatus).open();
+    new RolloverResultModal(app, sourceFile.basename, rolledLines.length, summaryStatus).open();
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         new Notice(`Rollover failed: ${message}`);
