@@ -23,12 +23,12 @@ export function extractFromRolloverBlock(content: string): ExtractedSections | n
 
     const afterHeading = content.slice(idx + ROLLED_OVER_HEADING.length);
 
-    // Find where the Rolled Over section ends (--- divider or next ## heading)
+    // --- divider is the primary boundary; only fall back to next ## heading if there is no divider
     const dividerInSection = afterHeading.search(/\n---(?:\n|$)/);
     const nextHeadingInSection = afterHeading.search(/\n## /);
 
     let sectionEnd: number;
-    if (dividerInSection !== -1 && (nextHeadingInSection === -1 || dividerInSection < nextHeadingInSection)) {
+    if (dividerInSection !== -1) {
         sectionEnd = dividerInSection;
     } else if (nextHeadingInSection !== -1) {
         sectionEnd = nextHeadingInSection;

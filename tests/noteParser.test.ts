@@ -85,4 +85,13 @@ describe('extractFromRolloverBlock', () => {
         const result = extractFromRolloverBlock(note);
         expect(result!.rolledLines).toEqual(['- [ ] Task']);
     });
+
+    test('captures everything up to --- even across intermediate ## headings', () => {
+        const note = "## Rolled Over\n- [ ] Task\n\n## Long Term\n- [ ] Other item\n\n---\nMy body notes";
+        const result = extractFromRolloverBlock(note);
+        expect(result!.rolledLines).toContain('- [ ] Task');
+        expect(result!.rolledLines).toContain('## Long Term');
+        expect(result!.rolledLines).toContain('- [ ] Other item');
+        expect(result!.freeFormLines.join('\n')).toContain('My body notes');
+    });
 });

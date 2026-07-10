@@ -79,7 +79,7 @@ function extractFromRolloverBlock(content) {
   const dividerInSection = afterHeading.search(/\n---(?:\n|$)/);
   const nextHeadingInSection = afterHeading.search(/\n## /);
   let sectionEnd;
-  if (dividerInSection !== -1 && (nextHeadingInSection === -1 || dividerInSection < nextHeadingInSection)) {
+  if (dividerInSection !== -1) {
     sectionEnd = dividerInSection;
   } else if (nextHeadingInSection !== -1) {
     sectionEnd = nextHeadingInSection;
